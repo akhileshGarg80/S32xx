@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { UniversalMCQQuestion } from '../types/mcq';
 
-export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://tnxuklrhfvfgbuvqspop.supabase.co';
-export const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_j9dANvEuMEhDy9q1CXC-zw_DaGayT8O';
+export const SUPABASE_URL = 'https://tnxuklrhfvfgbuvqspop.supabase.co';
+export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_j9dANvEuMEhDy9q1CXC-zw_DaGayT8O';
 
 // Initialize Supabase Client
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -61,8 +61,14 @@ ALTER TABLE public.topics ADD COLUMN IF NOT EXISTS content_type TEXT DEFAULT 'ra
 ALTER TABLE public.topics ADD COLUMN IF NOT EXISTS parsed_questions JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.topics ADD COLUMN IF NOT EXISTS raw_source TEXT DEFAULT '';
 
+-- CRITICAL: Grant schema and table access to anon and authenticated roles
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON TABLE public.topics TO anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+
 ALTER TABLE public.topics ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow public all access" ON public.topics;
 CREATE POLICY "Allow public all access"
 ON public.topics FOR ALL
 USING (true) WITH CHECK (true);
@@ -229,31 +235,36 @@ export async function fetchAllTopics(): Promise<{ topics: TopicItem[]; isFromSup
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (!error && data && data.length > 0) {
-      const formatted: TopicItem[] = data.map((item: any) => ({
-        id: item.id,
-        created_at: item.created_at || new Date().toISOString(),
-        subject: item.subject,
-        topic_name: item.topic_name,
-        subtopic_name: item.subtopic_name || '',
-        link_title: item.link_title || item.description || '',
-        subdomain: item.subdomain,
-        description: item.description || '',
-        code: item.code,
-        content_type: item.content_type || 'raw_html',
-        parsed_questions: Array.isArray(item.parsed_questions) ? item.parsed_questions : undefined,
-        raw_source: item.raw_source || '',
-        subtopics: Array.isArray(item.subtopics) ? item.subtopics : [],
-        is_new: item.is_new ?? true
-      }));
-      saveLocalStoredTopics(formatted);
-      return { topics: formatted, isFromSupabase: true };
+    if (!error && data) {
+      if (data.length > 0) {
+        const formatted: TopicItem[] = data.map((item: any) => ({
+          id: item.id,
+          created_at: item.created_at || new Date().toISOString(),
+          subject: item.subject,
+          topic_name: item.topic_name,
+          subtopic_name: item.subtopic_name || '',
+          link_title: item.link_title || item.description || '',
+          subdomain: item.subdomain,
+          description: item.description || '',
+          code: item.code,
+          content_type: item.content_type || 'raw_html',
+          parsed_questions: Array.isArray(item.parsed_questions) ? item.parsed_questions : undefined,
+          raw_source: item.raw_source || '',
+          subtopics: Array.isArray(item.subtopics) ? item.subtopics : [],
+          is_new: item.is_new ?? true
+        }));
+        saveLocalStoredTopics(formatted);
+        return { topics: formatted, isFromSupabase: true };
+      }
+      return { topics: getLocalStoredTopics(), isFromSupabase: true };
     }
 
     if (error) {
+      console.warn('[Supabase Fetch Error]:', error.message);
       return { topics: getLocalStoredTopics(), isFromSupabase: false, error: error.message };
     }
   } catch (err: any) {
+    console.warn('[Supabase Fetch Catch]:', err);
     return { topics: getLocalStoredTopics(), isFromSupabase: false, error: err?.message };
   }
 
@@ -300,7 +311,8 @@ export async function insertTopic(topic: Omit<TopicItem, 'id' | 'created_at'>): 
       .single();
 
     if (error) {
-      return { success: true, data: newRecord, error: error.message };
+      console.error('[Supabase Insert Error]:', error.message);
+      return { success: false, data: newRecord, error: error.message };
     }
 
     if (data) {
@@ -325,7 +337,8 @@ export async function insertTopic(topic: Omit<TopicItem, 'id' | 'created_at'>): 
       return { success: true, data: saved };
     }
   } catch (err: any) {
-    return { success: true, data: newRecord, error: err?.message };
+    console.error('[Supabase Insert Catch]:', err);
+    return { success: false, data: newRecord, error: err?.message };
   }
 
   return { success: true, data: newRecord };

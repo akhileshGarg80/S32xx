@@ -305,6 +305,14 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
           url: generatedShareUrl,
           topic: res.data
         });
+
+        if (res.error) {
+          setErrorMessage(`Supabase Error: ${res.error}. (Supabase SQL Editor me "GRANT ALL ON TABLE public.topics TO anon, authenticated, service_role;" run karein).`);
+        } else {
+          setErrorMessage(null);
+        }
+      } else if (res.error) {
+        setErrorMessage(`Supabase Error: ${res.error}. (Fix: Supabase SQL Editor me "GRANT ALL ON TABLE public.topics TO anon, authenticated, service_role;" run karein).`);
       }
     } catch (err: any) {
       setErrorMessage(err?.message || 'Save nahi ho saka.');

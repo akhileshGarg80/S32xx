@@ -54,8 +54,18 @@ export const SqlSetupModal: React.FC<SqlSetupModalProps> = ({ isOpen, onClose, i
           </div>
 
           <p className="text-xs text-slate-400 leading-relaxed">
-            Run the SQL command below in your <span className="text-slate-200 font-medium">Supabase Dashboard &gt; SQL Editor</span>. It creates the <code className="text-emerald-300 bg-slate-800 px-1 py-0.5 rounded text-[11px]">public.topics</code> table with RLS policies enabled for public upload and testing without backend servers.
+            Run the SQL command below in your <span className="text-slate-200 font-medium">Supabase Dashboard &gt; SQL Editor</span>. It creates the <code className="text-emerald-300 bg-slate-800 px-1 py-0.5 rounded text-[11px]">public.topics</code> table with RLS policies and grants full permissions to <code className="text-emerald-300 bg-slate-800 px-1 py-0.5 rounded text-[11px]">anon</code> role.
           </p>
+
+          <div className="p-3 bg-emerald-950/40 border border-emerald-500/40 rounded-lg text-xs space-y-1">
+            <span className="font-semibold text-emerald-400">Important Permission Command:</span>
+            <p className="text-slate-300">
+              Agar pehle se table bani hai aur permission error aa raha ho, to sirf ye ek command run karein:
+            </p>
+            <code className="block p-2 bg-slate-950 border border-slate-800 rounded font-mono text-[11px] text-emerald-300 select-all">
+              GRANT ALL ON TABLE public.topics TO anon, authenticated, service_role;
+            </code>
+          </div>
 
           <div className="relative">
             <div className="flex items-center justify-between bg-slate-950 px-3.5 py-2 border-t border-x border-slate-800 rounded-t-lg">
