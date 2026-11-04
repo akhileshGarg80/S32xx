@@ -1,0 +1,6 @@
+{
+  "name": "TopicTest Hub",
+  "description": "Multi-subject testing and code upload platform with real-time topic hierarchy, interactive test sandbox, and Supabase integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
