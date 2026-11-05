@@ -355,3 +355,71 @@ export async function deleteTopicById(id: string): Promise<boolean> {
   }
   return true;
 }
+
+export async function updateTopicById(
+  id: string,
+  updates: Partial<TopicItem>
+): Promise<{ success: boolean; data?: TopicItem; error?: string }> {
+  // Update in localStorage first
+  const localList = getLocalStoredTopics();
+  const idx = localList.findIndex(t => t.id === id);
+  let updatedRecord: TopicItem | null = null;
+  if (idx >= 0) {
+    localList[idx] = { ...localList[idx], ...updates };
+    updatedRecord = localList[idx];
+    saveLocalStoredTopics(localList);
+  }
+
+  // Update in Supabase
+  try {
+    const payload: any = {};
+    if (updates.subject !== undefined) payload.subject = updates.subject;
+    if (updates.topic_name !== undefined) payload.topic_name = updates.topic_name;
+    if (updates.subtopic_name !== undefined) payload.subtopic_name = updates.subtopic_name;
+    if (updates.link_title !== undefined) payload.link_title = updates.link_title;
+    if (updates.subdomain !== undefined) payload.subdomain = updates.subdomain;
+    if (updates.description !== undefined) payload.description = updates.description;
+    if (updates.code !== undefined) payload.code = updates.code;
+    if (updates.content_type !== undefined) payload.content_type = updates.content_type;
+    if (updates.parsed_questions !== undefined) payload.parsed_questions = updates.parsed_questions;
+    if (updates.raw_source !== undefined) payload.raw_source = updates.raw_source;
+    if (updates.subtopics !== undefined) payload.subtopics = updates.subtopics;
+
+    const { data, error } = await supabase
+      .from('topics')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[Supabase Update Error]:', error.message);
+      return { success: false, data: updatedRecord || undefined, error: error.message };
+    }
+
+    if (data) {
+      const saved: TopicItem = {
+        id: data.id,
+        created_at: data.created_at,
+        subject: data.subject,
+        topic_name: data.topic_name,
+        subtopic_name: data.subtopic_name || '',
+        link_title: data.link_title || '',
+        subdomain: data.subdomain,
+        description: data.description || '',
+        code: data.code,
+        content_type: data.content_type || 'raw_html',
+        parsed_questions: Array.isArray(data.parsed_questions) ? data.parsed_questions : undefined,
+        raw_source: data.raw_source || '',
+        subtopics: Array.isArray(data.subtopics) ? data.subtopics : [],
+        is_new: data.is_new ?? false,
+      };
+      return { success: true, data: saved };
+    }
+  } catch (err: any) {
+    console.warn('[Supabase Update Catch]:', err);
+    return { success: false, data: updatedRecord || undefined, error: err?.message };
+  }
+
+  return { success: true, data: updatedRecord || undefined };
+}

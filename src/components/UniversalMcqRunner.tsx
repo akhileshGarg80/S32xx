@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { UniversalMCQQuestion } from '../types/mcq';
 import {
   Check,
@@ -10,8 +10,21 @@ import {
   Share2,
   CheckCircle2,
   XCircle,
-  HelpCircle
+  HelpCircle,
+  Clock
 } from 'lucide-react';
+import { formatTimeSeconds } from '../lib/analytics';
+
+export interface TestSubmissionStats {
+  durationSeconds: number;
+  totalQuestions: number;
+  attempted: number;
+  correct: number;
+  wrong: number;
+  unattempted: number;
+  accuracy: number;
+  score: number;
+}
 
 interface UniversalMcqRunnerProps {
   title: string;
@@ -21,7 +34,7 @@ interface UniversalMcqRunnerProps {
   questions: UniversalMCQQuestion[];
   onBackToFolders: () => void;
   onShareTest?: () => void;
-  onTestSubmitted?: () => void;
+  onTestSubmitted?: (stats: TestSubmissionStats) => void;
 }
 
 export const UniversalMcqRunner: React.FC<UniversalMcqRunnerProps> = ({
@@ -39,6 +52,19 @@ export const UniversalMcqRunner: React.FC<UniversalMcqRunnerProps> = ({
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [filterReview, setFilterReview] = useState<'all' | 'correct' | 'wrong' | 'unattempted'>('all');
   const [expandedExplanations, setExpandedExplanations] = useState<Record<number, boolean>>({});
+
+  // Active Timer Tracking
+  const [startTime, setStartTime] = useState<number>(() => Date.now());
+  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
+  const [finalDuration, setFinalDuration] = useState<number>(0);
+
+  useEffect(() => {
+    if (isSubmitted) return;
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [startTime, isSubmitted]);
 
   // Handle option selection
   const handleSelectOption = (qIdx: number, label: string) => {
@@ -94,11 +120,22 @@ export const UniversalMcqRunner: React.FC<UniversalMcqRunnerProps> = ({
     return { attempted, unattempted, correct, wrong, accuracy, score };
   }, [questions, selectedAnswers]);
 
-  // Submit test: marks test submitted and notifies parent to clear green dot!
+  // Submit test: marks test submitted and notifies parent to clear green dot and record analytics!
   const handleSubmitTest = () => {
+    const duration = Math.max(1, Math.floor((Date.now() - startTime) / 1000));
+    setFinalDuration(duration);
     setIsSubmitted(true);
     if (onTestSubmitted) {
-      onTestSubmitted();
+      onTestSubmitted({
+        durationSeconds: duration,
+        totalQuestions: questions.length,
+        attempted: stats.attempted,
+        correct: stats.correct,
+        wrong: stats.wrong,
+        unattempted: stats.unattempted,
+        accuracy: stats.accuracy,
+        score: stats.score
+      });
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -108,6 +145,9 @@ export const UniversalMcqRunner: React.FC<UniversalMcqRunnerProps> = ({
     setIsSubmitted(false);
     setExpandedExplanations({});
     setFilterReview('all');
+    setStartTime(Date.now());
+    setElapsedSeconds(0);
+    setFinalDuration(0);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -157,7 +197,13 @@ export const UniversalMcqRunner: React.FC<UniversalMcqRunnerProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
+          {/* LIVE TIMER */}
+          <div className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-900 border border-slate-800 text-xs font-mono text-emerald-400">
+            <Clock className="w-3.5 h-3.5" />
+            <span>{formatTimeSeconds(isSubmitted ? finalDuration : elapsedSeconds)}</span>
+          </div>
+
           {onShareTest && (
             <button
               onClick={onShareTest}
@@ -190,10 +236,10 @@ export const UniversalMcqRunner: React.FC<UniversalMcqRunnerProps> = ({
               <span>Test Result & Score Summary</span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center">
               <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
                 <div className="text-lg sm:text-xl font-bold text-slate-200">{questions.length}</div>
-                <div className="text-[10px] text-slate-400">Total</div>
+                <div className="text-[10px] text-slate-400">Total Qs</div>
               </div>
               <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
                 <div className="text-lg sm:text-xl font-bold text-sky-400">{stats.attempted}</div>
@@ -207,9 +253,15 @@ export const UniversalMcqRunner: React.FC<UniversalMcqRunnerProps> = ({
                 <div className="text-lg sm:text-xl font-bold text-rose-400">{stats.wrong}</div>
                 <div className="text-[10px] text-rose-300 font-medium">Galat</div>
               </div>
-              <div className="col-span-2 sm:col-span-1 p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
+              <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
                 <div className="text-lg sm:text-xl font-bold text-amber-400">{stats.accuracy}%</div>
                 <div className="text-[10px] text-slate-400">Accuracy</div>
+              </div>
+              <div className="col-span-2 sm:col-span-1 p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                <div className="text-lg sm:text-xl font-bold text-slate-100 font-mono">
+                  {formatTimeSeconds(finalDuration || elapsedSeconds)}
+                </div>
+                <div className="text-[10px] text-slate-400">Time Laga</div>
               </div>
             </div>
 

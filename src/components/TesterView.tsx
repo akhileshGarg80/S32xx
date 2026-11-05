@@ -16,10 +16,20 @@ import {
   ChevronDown,
   ChevronsDown,
   ChevronsUp,
-  ArrowLeft,
   Link as LinkIcon,
-  AlertCircle
+  AlertCircle,
+  BarChart3,
+  CheckCircle2,
+  ArrowLeft
 } from 'lucide-react';
+import { AnalysisModal } from './AnalysisModal';
+import {
+  TestAttemptRecord,
+  getStoredAttempts,
+  saveTestAttempt,
+  clearAllAttempts,
+  computeAnalyticsSummary
+} from '../lib/analytics';
 
 interface TesterViewProps {
   topics: TopicItem[];
@@ -59,6 +69,13 @@ export const TesterView: React.FC<TesterViewProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
   const [copiedShare, setCopiedShare] = useState(false);
+
+  // Performance & Topic Analysis State
+  const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
+  const [attempts, setAttempts] = useState<TestAttemptRecord[]>(() => getStoredAttempts());
+  const [htmlStartTime, setHtmlStartTime] = useState<number>(() => Date.now());
+
+  const analyticsSummary = useMemo(() => computeAnalyticsSummary(attempts), [attempts]);
 
   // When subject changes, reset active test and ensure all dropdowns start closed
   useEffect(() => {
@@ -127,6 +144,7 @@ export const TesterView: React.FC<TesterViewProps> = ({
   };
 
   const startTest = (session: ActiveTestSession) => {
+    setHtmlStartTime(Date.now());
     setActiveTest(session);
     // Green dot will be cleared ONLY when user submits the test!
   };
@@ -180,10 +198,26 @@ export const TesterView: React.FC<TesterViewProps> = ({
             questions={activeTest.parsedQuestions}
             onBackToFolders={() => setActiveTest(null)}
             onShareTest={handleShareCurrentTest}
-            onTestSubmitted={() => {
+            onTestSubmitted={(stats) => {
               if (activeTest.id) {
                 onMarkVisited(activeTest.id);
               }
+              const newRecord = saveTestAttempt({
+                testId: activeTest.id || activeTest.subdomain,
+                topicName: activeTest.topicName,
+                subtopicName: activeTest.subtopicName,
+                subject: selectedSubject,
+                title: activeTest.title,
+                totalQuestions: stats.totalQuestions,
+                attempted: stats.attempted,
+                correct: stats.correct,
+                wrong: stats.wrong,
+                unattempted: stats.unattempted,
+                accuracy: stats.accuracy,
+                durationSeconds: stats.durationSeconds,
+                score: stats.score,
+              });
+              setAttempts(prev => [newRecord, ...prev]);
             }}
           />
         ) : (
@@ -210,6 +244,36 @@ export const TesterView: React.FC<TesterViewProps> = ({
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => {
+                    const elapsedSec = Math.max(10, Math.round((Date.now() - htmlStartTime) / 1000));
+                    const newRecord = saveTestAttempt({
+                      testId: activeTest.id || activeTest.subdomain,
+                      topicName: activeTest.topicName,
+                      subtopicName: activeTest.subtopicName,
+                      subject: selectedSubject,
+                      title: activeTest.title,
+                      totalQuestions: 10,
+                      attempted: 10,
+                      correct: 10,
+                      wrong: 0,
+                      unattempted: 0,
+                      accuracy: 100,
+                      durationSeconds: elapsedSec,
+                      score: 10,
+                    });
+                    if (activeTest.id) {
+                      onMarkVisited(activeTest.id);
+                    }
+                    setAttempts(prev => [newRecord, ...prev]);
+                    alert('Practice attempt recorded in Performance Analysis!');
+                  }}
+                  title="Mark this practice session completed and save in analysis"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition-colors"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="hidden sm:inline">Complete Practice</span>
+                </button>
                 <button
                   onClick={() => setIframeKey(k => k + 1)}
                   title="Restart Test"
@@ -578,6 +642,60 @@ export const TesterView: React.FC<TesterViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* FLOATING BOTTOM-LEFT TINY ANALYSIS ICON BUTTON                */}
+      {/* ------------------------------------------------------------- */}
+      {!isFullscreen && (
+        <div className="fixed bottom-4 left-4 z-40">
+          <button
+            type="button"
+            onClick={() => setIsAnalysisOpen(true)}
+            title={`Performance & Topic Analysis (${analyticsSummary.grandTotalQuestions} Qs Solved)`}
+            aria-label="Performance & Topic Analysis"
+            className="relative flex items-center justify-center w-9 h-9 rounded-full bg-slate-900/90 hover:bg-slate-800 text-emerald-400 hover:text-emerald-300 border border-emerald-500/40 hover:border-emerald-400 shadow-xl shadow-black/70 transition-all hover:scale-110 active:scale-95 group backdrop-blur-md"
+          >
+            <BarChart3 className="w-4 h-4 transition-transform group-hover:scale-110" />
+
+            {/* Tiny Badge on top-right of the icon if tests have been done */}
+            {analyticsSummary.grandTotalQuestions > 0 && (
+              <span className="absolute -top-1 -right-1 px-1 min-w-[16px] h-4 rounded-full bg-emerald-500 text-slate-950 text-[9px] font-bold font-mono flex items-center justify-center shadow-sm">
+                {analyticsSummary.grandTotalQuestions > 99 ? '99+' : analyticsSummary.grandTotalQuestions}
+              </span>
+            )}
+
+            {/* Tiny tooltip on hover */}
+            <span className="absolute left-11 whitespace-nowrap px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-200 text-[10px] font-medium shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity">
+              Analysis
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* ANALYSIS MODAL                                                */}
+      {/* ------------------------------------------------------------- */}
+      <AnalysisModal
+        isOpen={isAnalysisOpen}
+        onClose={() => setIsAnalysisOpen(false)}
+        attempts={attempts}
+        allTopics={topics}
+        onClearHistory={() => {
+          clearAllAttempts();
+          setAttempts([]);
+        }}
+        onRetakeTopic={(topicName, subject) => {
+          setIsAnalysisOpen(false);
+          if (subject !== selectedSubject) {
+            onSelectSubject(subject);
+          }
+          // Expand matching folder
+          const matchTopic = (SYLLABUS_DATA[subject] || []).find(t => t.name.toLowerCase().includes(topicName.toLowerCase()));
+          if (matchTopic) {
+            setExpandedFolders(prev => ({ ...prev, [matchTopic.id]: true }));
+          }
+        }}
+      />
     </div>
   );
 };

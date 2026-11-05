@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { SubjectType, ALL_SUBJECTS, TopicItem, insertTopic } from '../lib/supabase';
+import { SubjectType, ALL_SUBJECTS, TopicItem, insertTopic, updateTopicById } from '../lib/supabase';
 import { SYLLABUS_DATA } from '../lib/syllabusData';
 import { UniversalMCQQuestion, UniversalMCQParseResult, MCQInputSourceType } from '../types/mcq';
 import { parsePlainText, parseUniversalFile } from '../lib/universalParser';
 import { generateHtmlFromMCQ } from '../lib/htmlTestGenerator';
+import { EditTopicModal } from './EditTopicModal';
 import {
   Code2,
   Copy,
@@ -22,11 +23,13 @@ import {
   CheckCircle2,
   AlertTriangle,
   Layers,
-  FileCheck
+  FileCheck,
+  Pencil
 } from 'lucide-react';
 
 interface UploaderViewProps {
   onTopicCreated: (topic: TopicItem) => void;
+  onTopicUpdated?: (topic: TopicItem) => void;
   onOpenTesterWithTopic: (subject: SubjectType, subdomain: string) => void;
   allTopics: TopicItem[];
   onDeleteTopic: (id: string) => void;
@@ -36,6 +39,7 @@ interface UploaderViewProps {
 
 export const UploaderView: React.FC<UploaderViewProps> = ({
   onTopicCreated,
+  onTopicUpdated,
   onOpenTesterWithTopic,
   allTopics,
   onDeleteTopic,
@@ -53,17 +57,30 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
   const [parseResult, setParseResult] = useState<UniversalMCQParseResult | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
 
+  // Edit Topic in Manage view
+  const [editingTopic, setEditingTopic] = useState<TopicItem | null>(null);
+
   // Raw Code fallback
   const [code, setCode] = useState('');
 
-  // Subject & Topic selectors
-  const [subject, setSubject] = useState<SubjectType>('Math');
-  const [selectedTopicName, setSelectedTopicName] = useState<string>('');
+  // Subject & Topic selectors with LocalStorage Memory
+  const [subject, setSubject] = useState<SubjectType>(() => {
+    const saved = localStorage.getItem('topictest_last_upload_subject');
+    return (saved && ALL_SUBJECTS.includes(saved as SubjectType)) ? (saved as SubjectType) : 'Math';
+  });
+
+  const [selectedTopicName, setSelectedTopicName] = useState<string>(() => {
+    const saved = localStorage.getItem('topictest_last_upload_topic');
+    return saved || '';
+  });
   const [customTopicName, setCustomTopicName] = useState<string>('');
   const [isCustomTopic, setIsCustomTopic] = useState<boolean>(false);
 
-  // Subtopic selector
-  const [selectedSubtopicName, setSelectedSubtopicName] = useState<string>('');
+  // Subtopic selector with LocalStorage Memory
+  const [selectedSubtopicName, setSelectedSubtopicName] = useState<string>(() => {
+    const saved = localStorage.getItem('topictest_last_upload_subtopic');
+    return saved || '';
+  });
   const [customSubtopicName, setCustomSubtopicName] = useState<string>('');
   const [isCustomSubtopic, setIsCustomSubtopic] = useState<boolean>(false);
 
@@ -83,35 +100,55 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
   // Topics available for the selected subject
   const currentSyllabusTopics = SYLLABUS_DATA[subject] || [];
 
-  // When subject changes, set default topic
+  // When subject changes, keep remembered topic if valid in this subject, otherwise pick first
   useEffect(() => {
-    if (currentSyllabusTopics.length > 0) {
-      setSelectedTopicName(currentSyllabusTopics[0].name);
-      setIsCustomTopic(false);
-      setCustomTopicName('');
+    localStorage.setItem('topictest_last_upload_subject', subject);
 
-      const firstSubs = currentSyllabusTopics[0].subtopics;
-      if (firstSubs.length > 0) {
-        setSelectedSubtopicName(firstSubs[0].name);
-        setIsCustomSubtopic(false);
-        setCustomSubtopicName('');
+    if (currentSyllabusTopics.length > 0) {
+      const topicExists = currentSyllabusTopics.some(t => t.name === selectedTopicName);
+      if (!topicExists && !isCustomTopic) {
+        const firstTopic = currentSyllabusTopics[0];
+        setSelectedTopicName(firstTopic.name);
+        setIsCustomTopic(false);
+        setCustomTopicName('');
+
+        const firstSubs = firstTopic.subtopics;
+        if (firstSubs.length > 0) {
+          setSelectedSubtopicName(firstSubs[0].name);
+          setIsCustomSubtopic(false);
+          setCustomSubtopicName('');
+        }
       }
     }
   }, [subject]);
 
-  // When topic changes, update available subtopics
+  // When topic changes, update available subtopics and save memory
   const currentTopicObj = currentSyllabusTopics.find(t => t.name === selectedTopicName);
   const availableSubtopics = currentTopicObj ? currentTopicObj.subtopics : [];
 
   useEffect(() => {
+    if (selectedTopicName) {
+      localStorage.setItem('topictest_last_upload_topic', selectedTopicName);
+    }
+
     if (availableSubtopics.length > 0) {
-      setSelectedSubtopicName(availableSubtopics[0].name);
-      setIsCustomSubtopic(false);
-      setCustomSubtopicName('');
-    } else {
+      const subExists = availableSubtopics.some(s => s.name === selectedSubtopicName);
+      if (!subExists && !isCustomSubtopic) {
+        setSelectedSubtopicName(availableSubtopics[0].name);
+        setIsCustomSubtopic(false);
+        setCustomSubtopicName('');
+      }
+    } else if (!isCustomSubtopic) {
       setSelectedSubtopicName('');
     }
   }, [selectedTopicName]);
+
+  // Save subtopic to memory when selected
+  useEffect(() => {
+    if (selectedSubtopicName) {
+      localStorage.setItem('topictest_last_upload_subtopic', selectedSubtopicName);
+    }
+  }, [selectedSubtopicName]);
 
   // Existing links count under the currently selected subtopic
   const finalTopic = isCustomTopic ? customTopicName : selectedTopicName;
@@ -301,6 +338,11 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
         const currentUrl = window.location.origin + window.location.pathname;
         const generatedShareUrl = `${currentUrl}?mode=tester&subject=${encodeURIComponent(subject)}&topic=${encodeURIComponent(cleanSubdomain)}`;
 
+        // Remember subject, topic, subtopic in memory
+        localStorage.setItem('topictest_last_upload_subject', subject);
+        localStorage.setItem('topictest_last_upload_topic', topicToSave);
+        localStorage.setItem('topictest_last_upload_subtopic', subtopicToSave);
+
         setSuccessLink({
           url: generatedShareUrl,
           topic: res.data
@@ -318,6 +360,26 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
       setErrorMessage(err?.message || 'Save nahi ho saka.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveEditedTopic = async (updated: TopicItem): Promise<boolean> => {
+    try {
+      const res = await updateTopicById(updated.id, updated);
+      if (res.data) {
+        if (onTopicUpdated) {
+          onTopicUpdated(res.data);
+        }
+        return true;
+      }
+      if (res.error) {
+        setErrorMessage(`Update failed: ${res.error}`);
+        return false;
+      }
+      return true;
+    } catch (err: any) {
+      setErrorMessage(`Update failed: ${err?.message || 'Unknown error'}`);
+      return false;
     }
   };
 
@@ -515,6 +577,13 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
                       ) : (
                         <Copy className="w-3 h-3" />
                       )}
+                    </button>
+                    <button
+                      onClick={() => setEditingTopic(item)}
+                      className="p-1 text-sky-400 hover:text-sky-300 transition-colors"
+                      title="Edit topic/questions"
+                    >
+                      <Pencil className="w-3 h-3" />
                     </button>
                     <button
                       onClick={() => onDeleteTopic(item.id)}
@@ -923,6 +992,14 @@ Answer Key:
           </div>
         </div>
       )}
+
+      {/* Edit Topic Modal */}
+      <EditTopicModal
+        isOpen={!!editingTopic}
+        topic={editingTopic}
+        onClose={() => setEditingTopic(null)}
+        onSave={handleSaveEditedTopic}
+      />
     </div>
   );
 };

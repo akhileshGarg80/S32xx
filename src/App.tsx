@@ -130,6 +130,10 @@ export default function App() {
     setTopics((prev) => [newTopic, ...prev.filter((t) => t.id !== newTopic.id)]);
   };
 
+  const handleTopicUpdated = (updatedTopic: TopicItem) => {
+    setTopics((prev) => prev.map((t) => (t.id === updatedTopic.id ? updatedTopic : t)));
+  };
+
   const handleDeleteTopic = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this topic?')) {
       await deleteTopicById(id);
@@ -215,6 +219,7 @@ export default function App() {
         ) : (
           <UploaderView
             onTopicCreated={handleTopicCreated}
+            onTopicUpdated={handleTopicUpdated}
             onOpenTesterWithTopic={handleOpenTesterWithTopic}
             allTopics={topics}
             onDeleteTopic={handleDeleteTopic}
