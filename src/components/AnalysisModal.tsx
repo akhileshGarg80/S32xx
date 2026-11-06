@@ -18,7 +18,9 @@ import {
   Zap,
   Target,
   ArrowLeft,
-  Sparkles
+  Sparkles,
+  Sun,
+  Moon
 } from 'lucide-react';
 import {
   TestAttemptRecord,
@@ -59,6 +61,8 @@ interface AnalysisModalProps {
   summary?: GrandAnalyticsSummary;
   attempts: TestAttemptRecord[];
   allTopics?: TopicItem[];
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
   onClearHistory: () => void;
   onRetakeTopic?: (topicName: string, subject: SubjectType, subtopicName?: string) => void;
 }
@@ -69,6 +73,8 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({
   summary: externalSummary,
   attempts,
   allTopics = [],
+  theme = 'dark',
+  onToggleTheme,
   onClearHistory,
   onRetakeTopic,
 }) => {
@@ -179,6 +185,28 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({
 
         {/* Right side actions in Top Header */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Top Dark / Light Mode Toggle Button (Entire Site Theme) */}
+          {onToggleTheme && (
+            <button
+              type="button"
+              onClick={onToggleTheme}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-white border border-slate-800 text-xs font-semibold transition-colors shadow-sm cursor-pointer"
+              title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode (Pure site ka theme badlega)`}
+            >
+              {theme === 'light' ? (
+                <>
+                  <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                  <span className="hidden sm:inline">Dark</span>
+                </>
+              ) : (
+                <>
+                  <Sun className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden sm:inline">Light</span>
+                </>
+              )}
+            </button>
+          )}
+
           {attempts.length > 0 && (
             <button
               onClick={() => {

@@ -180,43 +180,34 @@ export const UniversalMcqRunner: React.FC<UniversalMcqRunnerProps> = ({
       {/* ------------------------------------------------------------- */}
       {/* 1. TOP HEADER BAR                                             */}
       {/* ------------------------------------------------------------- */}
-      <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-slate-950 border-b border-slate-800">
+      <div className="flex items-center justify-between gap-2.5 px-3 py-1.5 bg-slate-950 border-b border-slate-800">
         <div className="flex items-center gap-2 truncate">
           <button
             onClick={onBackToFolders}
-            className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-medium border border-slate-700 transition-colors shrink-0"
+            className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-medium border border-slate-700 transition-colors shrink-0"
+            title="Back"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Folders</span>
+            <span>Back</span>
           </button>
           <div className="truncate text-xs">
             <span className="text-emerald-400 font-semibold">{title}</span>
             <span className="text-slate-500 ml-1.5 hidden sm:inline">
-              ({subject} · {topicName}{subtopicName ? ` · ${subtopicName}` : ''})
+              ({subject} · {topicName})
             </span>
           </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
           {/* LIVE TIMER */}
-          <div className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-900 border border-slate-800 text-xs font-mono text-emerald-400">
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-xs font-mono text-emerald-400">
             <Clock className="w-3.5 h-3.5" />
             <span>{formatTimeSeconds(isSubmitted ? finalDuration : elapsedSeconds)}</span>
           </div>
 
-          {onShareTest && (
-            <button
-              onClick={onShareTest}
-              className="p-1.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-xs transition-colors"
-              title="Share Test Link"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-            </button>
-          )}
-
           <button
             onClick={handleRestart}
-            className="flex items-center gap-1 px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-xs transition-colors"
+            className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-xs transition-colors"
             title="Restart Test"
           >
             <RotateCcw className="w-3 h-3" />

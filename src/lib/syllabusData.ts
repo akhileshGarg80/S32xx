@@ -19,11 +19,22 @@ const slugify = (text: string): string => {
     .replace(/\s+/g, '-');
 };
 
+export const ESSENCE_SUBTOPIC_NAME = '🦋⃝ 𝐄𝐒𝐒𝐄𝐍𝐂𝐄 ✨';
+export const ESSENCE_SUBTOPIC_SLUG = 'essence';
+
+export const ESSENCE_SUBTOPIC: SyllabusSubtopic = {
+  name: ESSENCE_SUBTOPIC_NAME,
+  slug: ESSENCE_SUBTOPIC_SLUG
+};
+
 const makeSubs = (list: string[]): SyllabusSubtopic[] => {
-  return list.map(item => ({
-    name: item,
-    slug: slugify(item).slice(0, 40)
-  }));
+  return [
+    ESSENCE_SUBTOPIC,
+    ...list.map(item => ({
+      name: item,
+      slug: slugify(item).slice(0, 40)
+    }))
+  ];
 };
 
 export const SYLLABUS_DATA: Record<SubjectType, SyllabusTopic[]> = {

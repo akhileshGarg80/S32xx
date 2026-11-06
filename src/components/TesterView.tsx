@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { SubjectType, TopicItem, markTopicAsVisited } from '../lib/supabase';
-import { SYLLABUS_DATA, SyllabusTopic, SyllabusSubtopic } from '../lib/syllabusData';
+import { SYLLABUS_DATA, SyllabusTopic, SyllabusSubtopic, ESSENCE_SUBTOPIC_NAME, ESSENCE_SUBTOPIC } from '../lib/syllabusData';
 import { UniversalMCQQuestion } from '../types/mcq';
 import { UniversalMcqRunner } from './UniversalMcqRunner';
 import {
@@ -20,9 +20,11 @@ import {
   AlertCircle,
   BarChart3,
   CheckCircle2,
-  ArrowLeft
+  ArrowLeft,
+  BookOpen
 } from 'lucide-react';
 import { AnalysisModal } from './AnalysisModal';
+import { BookReader } from './BookReader';
 import {
   TestAttemptRecord,
   getStoredAttempts,
@@ -30,6 +32,72 @@ import {
   clearAllAttempts,
   computeAnalyticsSummary
 } from '../lib/analytics';
+
+/**
+ * Prepares HTML content for the sandbox iframe:
+ * 1. Guarantees mobile viewport meta tag exists
+ * 2. Injects responsive full-width CSS so options/answers and containers expand edge-to-edge
+ */
+const prepareIframeSrcDoc = (rawCode: string): string => {
+  if (!rawCode) return '';
+  let processed = rawCode;
+
+  // Ensure viewport meta tag exists for proper mobile scaling
+  if (!processed.includes('name="viewport"') && !processed.includes("name='viewport'")) {
+    if (processed.includes('<head>')) {
+      processed = processed.replace('<head>', '<head><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">');
+    } else if (processed.includes('<html>')) {
+      processed = processed.replace('<html>', '<html><head><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0"></head>');
+    } else {
+      processed = '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">' + processed;
+    }
+  }
+
+  // Inject responsive width rules to make sure content and options/answers are 100% full width down to bottom
+  const fullWidthCss = `
+<style id="topictest-responsive-override">
+  html, body {
+    width: 100% !important;
+    min-height: 100% !important;
+    margin: 0 !important;
+    padding: 12px 10px 40px 10px !important;
+    box-sizing: border-box !important;
+    -webkit-text-size-adjust: 100% !important;
+  }
+  *, *::before, *::after {
+    box-sizing: border-box !important;
+  }
+  .container, .wrapper, .main-content, #container, #wrapper, .content, main {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  .option, .options, .options-list, .opt-btn, .option-btn, .option-item, .choice, .choices, .answer, .answers, [class*="option"], [class*="answer"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .question-card, .q-card, .card, [class*="question"] {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+</style>
+`;
+
+  if (processed.includes('</head>')) {
+    processed = processed.replace('</head>', fullWidthCss + '</head>');
+  } else if (processed.includes('<body>')) {
+    processed = processed.replace('<body>', fullWidthCss + '<body>');
+  } else {
+    processed = fullWidthCss + processed;
+  }
+
+  return processed;
+};
 
 interface TesterViewProps {
   topics: TopicItem[];
@@ -39,6 +107,8 @@ interface TesterViewProps {
   visitedIds: Set<string>;
   onMarkVisited: (id: string) => void;
   onSwitchToUploader: () => void;
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
 }
 
 interface ActiveTestSession {
@@ -48,8 +118,9 @@ interface ActiveTestSession {
   code: string;
   subdomain: string;
   id?: string;
-  contentType?: 'raw_html' | 'parsed_mcq';
+  contentType?: 'raw_html' | 'parsed_mcq' | 'book_notes';
   parsedQuestions?: UniversalMCQQuestion[];
+  rawSource?: string;
 }
 
 export const TesterView: React.FC<TesterViewProps> = ({
@@ -60,6 +131,8 @@ export const TesterView: React.FC<TesterViewProps> = ({
   visitedIds,
   onMarkVisited,
   onSwitchToUploader,
+  theme,
+  onToggleTheme,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   // By default, ALL topic and subtopic dropdowns start CLOSED (band)
@@ -97,7 +170,8 @@ export const TesterView: React.FC<TesterViewProps> = ({
           subdomain: match.subdomain,
           id: match.id,
           contentType: match.content_type,
-          parsedQuestions: match.parsed_questions
+          parsedQuestions: match.parsed_questions,
+          rawSource: match.raw_source || match.code
         });
       }
     }
@@ -119,7 +193,23 @@ export const TesterView: React.FC<TesterViewProps> = ({
 
   // Group user-uploaded topics under matching syllabus topic & subtopic
   const subjectSyllabus = useMemo(() => {
-    return SYLLABUS_DATA[selectedSubject] || [];
+    const rawList = SYLLABUS_DATA[selectedSubject] || [];
+    return rawList.map(topic => {
+      // Ensure 🦋⃝ 𝐄𝐒𝐒𝐄𝐍𝐂𝐄 ✨ is always the first subtopic at the top
+      const hasEssence = topic.subtopics.some(s => s.name === ESSENCE_SUBTOPIC_NAME || s.name.includes('𝐄𝐒𝐒𝐄𝐍𝐂𝐄') || s.name.includes('ESSENCE'));
+      if (!hasEssence) {
+        return {
+          ...topic,
+          subtopics: [ESSENCE_SUBTOPIC, ...topic.subtopics]
+        };
+      }
+      const essence = topic.subtopics.find(s => s.name === ESSENCE_SUBTOPIC_NAME || s.name.includes('𝐄𝐒𝐒𝐄𝐍𝐂𝐄') || s.name.includes('ESSENCE')) || ESSENCE_SUBTOPIC;
+      const others = topic.subtopics.filter(s => s !== essence && s.name !== ESSENCE_SUBTOPIC_NAME && !s.name.includes('𝐄𝐒𝐒𝐄𝐍𝐂𝐄') && !s.name.includes('ESSENCE'));
+      return {
+        ...topic,
+        subtopics: [essence, ...others]
+      };
+    });
   }, [selectedSubject]);
 
   // User uploaded topics for this subject
@@ -184,12 +274,47 @@ export const TesterView: React.FC<TesterViewProps> = ({
   }, [subjectSyllabus, searchQuery]);
 
   return (
-    <div className="pt-16 pb-12 px-3 sm:px-6 max-w-5xl mx-auto min-h-screen flex flex-col">
+    <div className={`flex flex-col min-h-screen ${
+      activeTest
+        ? 'pt-14 pb-0 px-0 sm:px-3 w-full max-w-none sm:max-w-7xl mx-auto h-[100dvh]'
+        : 'pt-16 pb-12 px-3 sm:px-6 max-w-5xl mx-auto'
+    }`}>
       {/* ------------------------------------------------------------------ */}
       {/* 1. ACTIVE TEST RUNNER (WHEN A TEST IS LAUNCHED)                    */}
       {/* ------------------------------------------------------------------ */}
       {activeTest ? (
-        activeTest.contentType === 'parsed_mcq' && activeTest.parsedQuestions && activeTest.parsedQuestions.length > 0 ? (
+        activeTest.contentType === 'book_notes' ? (
+          <BookReader
+            title={activeTest.title}
+            subject={selectedSubject}
+            topicName={activeTest.topicName}
+            subtopicName={activeTest.subtopicName}
+            content={activeTest.rawSource || activeTest.code}
+            onBackToFolders={() => setActiveTest(null)}
+            onShareBook={handleShareCurrentTest}
+            onMarkRead={(durationSec) => {
+              if (activeTest.id) {
+                onMarkVisited(activeTest.id);
+              }
+              const newRecord = saveTestAttempt({
+                testId: activeTest.id || activeTest.subdomain,
+                topicName: activeTest.topicName,
+                subtopicName: activeTest.subtopicName,
+                subject: selectedSubject,
+                title: activeTest.title,
+                totalQuestions: 1,
+                attempted: 1,
+                correct: 1,
+                wrong: 0,
+                unattempted: 0,
+                accuracy: 100,
+                durationSeconds: durationSec,
+                score: 1,
+              });
+              setAttempts(prev => [newRecord, ...prev]);
+            }}
+          />
+        ) : activeTest.contentType === 'parsed_mcq' && activeTest.parsedQuestions && activeTest.parsedQuestions.length > 0 ? (
           <UniversalMcqRunner
             title={activeTest.title}
             subject={selectedSubject}
@@ -221,91 +346,31 @@ export const TesterView: React.FC<TesterViewProps> = ({
             }}
           />
         ) : (
-          <div className={`flex flex-col flex-1 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl transition-all ${isFullscreen ? 'fixed inset-0 z-50 rounded-none border-none' : 'min-h-[700px]'}`}>
-            {/* Top Bar inside runner */}
-            <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-950 border-b border-slate-800">
-              <div className="flex items-center gap-2 truncate">
-                <button
-                  onClick={() => setActiveTest(null)}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-medium border border-slate-700 transition-colors shrink-0"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Folders</span>
-                </button>
-                <div className="truncate text-xs">
-                  <span className="text-emerald-400 font-semibold">{activeTest.title}</span>
-                  {activeTest.subtopicName && (
-                    <span className="text-slate-500 ml-1.5 hidden sm:inline">({activeTest.subtopicName})</span>
-                  )}
-                  <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400 border border-slate-700">
-                    HTML Sandbox
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  onClick={() => {
-                    const elapsedSec = Math.max(10, Math.round((Date.now() - htmlStartTime) / 1000));
-                    const newRecord = saveTestAttempt({
-                      testId: activeTest.id || activeTest.subdomain,
-                      topicName: activeTest.topicName,
-                      subtopicName: activeTest.subtopicName,
-                      subject: selectedSubject,
-                      title: activeTest.title,
-                      totalQuestions: 10,
-                      attempted: 10,
-                      correct: 10,
-                      wrong: 0,
-                      unattempted: 0,
-                      accuracy: 100,
-                      durationSeconds: elapsedSec,
-                      score: 10,
-                    });
-                    if (activeTest.id) {
-                      onMarkVisited(activeTest.id);
-                    }
-                    setAttempts(prev => [newRecord, ...prev]);
-                    alert('Practice attempt recorded in Performance Analysis!');
-                  }}
-                  title="Mark this practice session completed and save in analysis"
-                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition-colors"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="hidden sm:inline">Complete Practice</span>
-                </button>
-                <button
-                  onClick={() => setIframeKey(k => k + 1)}
-                  title="Restart Test"
-                  className="p-1.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-xs"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={handleShareCurrentTest}
-                  title="Share link"
-                  className="flex items-center gap-1 px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-xs"
-                >
-                  <Share2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{copiedShare ? 'Copied' : 'Share'}</span>
-                </button>
-                <button
-                  onClick={() => setIsFullscreen(!isFullscreen)}
-                  className="p-1.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-xs"
-                >
-                  {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                </button>
+          <div className="flex flex-col flex-1 w-full bg-slate-900 border-x-0 sm:border-x border-t border-b-0 sm:border-b border-slate-800 sm:rounded-xl overflow-hidden shadow-2xl transition-all h-full min-h-[calc(100dvh-3.5rem)] sm:min-h-0">
+            {/* Top Bar inside runner: Only small Back button and Title */}
+            <div className="flex items-center gap-2.5 px-3 py-1.5 bg-slate-950 border-b border-slate-800 shrink-0">
+              <button
+                onClick={() => setActiveTest(null)}
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-medium border border-slate-700 transition-colors shrink-0"
+                title="Back"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back</span>
+              </button>
+              <div className="truncate text-xs font-semibold text-slate-200">
+                <span>{activeTest.title}</span>
               </div>
             </div>
 
-            {/* Sandbox Iframe */}
-            <div className="flex-1 w-full bg-slate-950 relative overflow-hidden">
+            {/* Sandbox Iframe - Full width and full height down to bottom */}
+            <div className="flex-1 w-full h-full min-h-0 bg-slate-950 relative overflow-hidden flex flex-col">
               <iframe
                 key={iframeKey}
                 title={activeTest.title}
-                srcDoc={activeTest.code}
+                srcDoc={prepareIframeSrcDoc(activeTest.code)}
                 sandbox="allow-scripts allow-modals allow-forms allow-same-origin"
-                className="w-full h-full border-none bg-white min-h-[620px]"
+                className="w-full h-full flex-1 border-0 bg-white block"
+                style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
               />
             </div>
           </div>
@@ -423,11 +488,10 @@ export const TesterView: React.FC<TesterViewProps> = ({
                         {/* GREEN DOT IF NEW TOPIC UPLOADED INSIDE */}
                         {hasNew && (
                           <span
-                            title="Newly uploaded test inside"
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 shrink-0"
+                            title="New"
+                            className="inline-flex items-center shrink-0"
                           >
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse"></span>
-                            <span>New</span>
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse" />
                           </span>
                         )}
                       </div>
@@ -444,19 +508,21 @@ export const TesterView: React.FC<TesterViewProps> = ({
 
                     {/* SUBTOPICS NESTED ACCORDIONS */}
                     {isExpanded && (
-                      <div className="pl-4 sm:pl-8 pr-3 py-2 bg-slate-950/70 border-t border-slate-800/60 divide-y divide-slate-800/40">
+                      <div className="pl-3 sm:pl-6 pr-2 py-1.5 bg-slate-950/70 border-t border-slate-800/60 divide-y divide-slate-800/40">
                         {topic.subtopics.map((sub, sIdx) => {
                           const subKey = `${topic.id}__${sub.slug}`;
                           const isSubExpanded = searchQuery.trim().length > 0 ? true : !!expandedSubtopics[subKey];
+                          const isEssence = sub.name === ESSENCE_SUBTOPIC_NAME || sub.name.includes('𝐄𝐒𝐒𝐄𝐍𝐂𝐄') || sub.name.includes('ESSENCE');
 
                           // Look for custom uploaded links specifically matching this topic + subtopic
                           const matchKeyExact = `${topic.name.trim().toLowerCase()}::${sub.name.trim().toLowerCase()}`;
                           const attachedUploads = uploadsMap[matchKeyExact] || [];
 
-                          // Also check by slug match
+                          // Also check by slug match or essence title
                           const altUploads = userUploads.filter(
                             u => u.topic_name.toLowerCase().includes(topic.name.toLowerCase()) &&
                                  (u.subtopic_name?.toLowerCase().includes(sub.name.toLowerCase()) ||
+                                  (isEssence && (u.subtopic_name?.toLowerCase().includes('essence') || u.subtopic_name?.includes('𝐄𝐒𝐒𝐄𝐍𝐂𝐄') || u.subdomain.includes('essence') || u.link_title?.includes('Insights') || u.link_title?.includes('Insights🪷'))) ||
                                   u.subdomain.toLowerCase().includes(sub.slug.toLowerCase()))
                           );
 
@@ -464,7 +530,7 @@ export const TesterView: React.FC<TesterViewProps> = ({
                           const subHasNew = allSubUploads.some(u => u.is_new);
 
                           return (
-                            <div key={sub.slug + sIdx} className="py-1.5">
+                            <div key={sub.slug + sIdx} className="py-1">
                               {/* SUBTOPIC DROPDOWN HEADER */}
                               <div
                                 onClick={() => toggleSubtopic(subKey)}
@@ -487,7 +553,7 @@ export const TesterView: React.FC<TesterViewProps> = ({
                                     <FileCode className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-400 shrink-0" />
                                   )}
 
-                                  <span className="font-semibold text-xs sm:text-[13px] text-slate-200 group-hover:text-white truncate">
+                                  <span className="font-semibold text-xs sm:text-[13px] truncate text-slate-200 group-hover:text-white">
                                     {sub.name}
                                   </span>
 
@@ -500,9 +566,8 @@ export const TesterView: React.FC<TesterViewProps> = ({
 
                                   {/* Green dot for new uploads in this subtopic */}
                                   {subHasNew && (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 shrink-0">
+                                    <span title="New" className="inline-flex items-center shrink-0">
                                       <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse" />
-                                      <span>New</span>
                                     </span>
                                   )}
                                 </div>
@@ -519,22 +584,19 @@ export const TesterView: React.FC<TesterViewProps> = ({
 
                               {/* SUBTOPIC INNER CONTENT (DROPDOWN BODY) */}
                               {isSubExpanded && (
-                                <div className="mt-1.5 ml-3 sm:ml-4 pl-3 sm:pl-5 pr-2 py-2 border-l-2 border-emerald-500/40 bg-slate-950/60 rounded-r-lg space-y-2">
+                                <div className="mt-1 ml-2 sm:ml-4 pl-2.5 sm:pl-4 pr-1.5 py-1.5 border-l-2 border-emerald-500/30 bg-slate-950/50 rounded-r-lg space-y-1.5">
                                   {/* MULTIPLE UPLOADED LINKS DIRECTLY UNDER THIS SUBTOPIC */}
                                   {allSubUploads.length > 0 ? (
                                     <div className="space-y-1.5">
-                                      <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 px-1 flex items-center justify-between">
-                                        <span>Uploaded Test Links:</span>
-                                        <span className="font-mono text-emerald-400">{allSubUploads.length} total</span>
-                                      </div>
                                       {allSubUploads.map((up, lIdx) => {
                                         const displayTitle = up.link_title || `Link ${lIdx + 1}: ${up.description || 'Practice Set'}`;
                                         const qCount = up.parsed_questions && up.parsed_questions.length > 0 ? up.parsed_questions.length : null;
+                                        const isBook = up.content_type === 'book_notes';
 
                                         return (
                                           <div
                                             key={up.id}
-                                            className="p-2 sm:p-2.5 rounded-lg bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-emerald-500/40 transition-colors"
+                                            className="p-1.5 sm:p-2 rounded-md bg-slate-900/80 hover:bg-slate-850 border border-slate-800 hover:border-emerald-500/40 transition-colors"
                                           >
                                             <div
                                               onClick={() => startTest({
@@ -545,23 +607,26 @@ export const TesterView: React.FC<TesterViewProps> = ({
                                                 subdomain: up.subdomain,
                                                 id: up.id,
                                                 contentType: up.content_type || (up.parsed_questions && up.parsed_questions.length > 0 ? 'parsed_mcq' : 'raw_html'),
-                                                parsedQuestions: up.parsed_questions
+                                                parsedQuestions: up.parsed_questions,
+                                                rawSource: up.raw_source || up.code
                                               })}
                                               className="flex items-center justify-between gap-2 cursor-pointer group"
                                             >
                                               <div className="flex items-center gap-2 truncate">
                                                 {up.is_new ? (
                                                   <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse shrink-0" />
+                                                ) : isBook ? (
+                                                  <BookOpen className="w-3.5 h-3.5 text-emerald-400 group-hover:text-emerald-300 shrink-0" />
                                                 ) : (
                                                   <LinkIcon className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 shrink-0" />
                                                 )}
-                                                <div className="truncate">
-                                                  <span className="text-xs text-slate-200 group-hover:text-white font-medium block truncate">
+                                                <div className="flex items-center gap-1.5 truncate">
+                                                  <span className="text-xs text-slate-200 group-hover:text-white font-medium truncate">
                                                     {displayTitle}
                                                   </span>
-                                                  {up.description && (
-                                                    <span className="text-[10px] text-slate-500 group-hover:text-slate-400 truncate block">
-                                                      {up.description}
+                                                  {isBook && (
+                                                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
+                                                      📖 Book
                                                     </span>
                                                   )}
                                                 </div>
@@ -573,16 +638,15 @@ export const TesterView: React.FC<TesterViewProps> = ({
                                                     {qCount} MCQs
                                                   </span>
                                                 )}
-                                                <span className="text-emerald-400 font-semibold text-[11px] px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 group-hover:bg-emerald-500/20 flex items-center gap-1">
-                                                  <span>Open Test</span>
-                                                  <span>→</span>
+                                                <span className="text-emerald-400 font-semibold text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 group-hover:bg-emerald-500/20 flex items-center gap-0.5 shrink-0">
+                                                  <span>{isBook ? 'Padhein' : 'Test →'}</span>
                                                 </span>
                                               </div>
                                             </div>
 
                                             {/* Nested subtopics within uploaded link if present */}
                                             {up.subtopics && up.subtopics.length > 0 && (
-                                              <div className="mt-2 pt-2 border-t border-slate-800/80 space-y-1">
+                                              <div className="mt-1.5 pt-1.5 border-t border-slate-800/80 space-y-1">
                                                 <span className="text-[10px] uppercase font-bold text-slate-500">Nested Sub-sections:</span>
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                                                   {up.subtopics.map(subItem => (
@@ -614,18 +678,8 @@ export const TesterView: React.FC<TesterViewProps> = ({
                                       })}
                                     </div>
                                   ) : (
-                                    <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-900/40 border border-slate-800/80 text-xs text-slate-400">
-                                      <div className="flex items-center gap-2">
-                                        <AlertCircle className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                                        <span>Koi test link uploaded nahi hai.</span>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => onSwitchToUploader()}
-                                        className="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition-colors shrink-0"
-                                      >
-                                        + Upload Link
-                                      </button>
+                                    <div className="py-1 px-1.5 text-[11px] text-slate-500 italic">
+                                      Abhi koi test uplabdh nahi hai.
                                     </div>
                                   )}
                                 </div>
@@ -680,6 +734,8 @@ export const TesterView: React.FC<TesterViewProps> = ({
         onClose={() => setIsAnalysisOpen(false)}
         attempts={attempts}
         allTopics={topics}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
         onClearHistory={() => {
           clearAllAttempts();
           setAttempts([]);

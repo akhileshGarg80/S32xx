@@ -30,7 +30,7 @@ export interface TopicItem {
   subdomain: string;
   description: string;
   code: string;
-  content_type?: 'raw_html' | 'parsed_mcq';
+  content_type?: 'raw_html' | 'parsed_mcq' | 'book_notes';
   parsed_questions?: UniversalMCQQuestion[];
   raw_source?: string;
   subtopics: SubTopicItem[];

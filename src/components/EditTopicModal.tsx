@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TopicItem, SubjectType, ALL_SUBJECTS } from '../lib/supabase';
 import { UniversalMCQQuestion } from '../types/mcq';
-import { generateHtmlFromMCQ } from '../lib/htmlTestGenerator';
+import { generateHtmlFromMCQ, generateHtmlFromBook } from '../lib/htmlTestGenerator';
 import {
   X,
   Check,
@@ -13,7 +13,8 @@ import {
   AlertCircle,
   RefreshCw,
   Layers,
-  HelpCircle
+  HelpCircle,
+  BookOpen
 } from 'lucide-react';
 import { SYLLABUS_DATA } from '../lib/syllabusData';
 
@@ -37,7 +38,8 @@ export const EditTopicModal: React.FC<EditTopicModalProps> = ({
   const [subdomain, setSubdomain] = useState('');
   const [description, setDescription] = useState('');
   const [code, setCode] = useState('');
-  const [contentType, setContentType] = useState<'raw_html' | 'parsed_mcq'>('raw_html');
+  const [rawSource, setRawSource] = useState('');
+  const [contentType, setContentType] = useState<'raw_html' | 'parsed_mcq' | 'book_notes'>('raw_html');
   const [questions, setQuestions] = useState<UniversalMCQQuestion[]>([]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,6 +55,7 @@ export const EditTopicModal: React.FC<EditTopicModalProps> = ({
       setSubdomain(topic.subdomain);
       setDescription(topic.description || '');
       setCode(topic.code || '');
+      setRawSource(topic.raw_source || topic.code || '');
       setContentType(topic.content_type || (topic.parsed_questions && topic.parsed_questions.length > 0 ? 'parsed_mcq' : 'raw_html'));
       setQuestions(topic.parsed_questions ? JSON.parse(JSON.stringify(topic.parsed_questions)) : []);
       setErrorMessage(null);
@@ -153,6 +156,18 @@ export const EditTopicModal: React.FC<EditTopicModalProps> = ({
         subtopicName,
         questions
       );
+    } else if (contentType === 'book_notes') {
+      if (!rawSource.trim()) {
+        setErrorMessage('Book content khali nahi ho sakta.');
+        return;
+      }
+      finalCode = generateHtmlFromBook(
+        linkTitle || topicName,
+        subject,
+        topicName,
+        subtopicName,
+        rawSource
+      );
     }
 
     setIsSubmitting(true);
@@ -170,6 +185,7 @@ export const EditTopicModal: React.FC<EditTopicModalProps> = ({
       code: finalCode,
       content_type: contentType,
       parsed_questions: contentType === 'parsed_mcq' ? questions : undefined,
+      raw_source: contentType === 'book_notes' ? rawSource : topic.raw_source,
     };
 
     try {
@@ -300,11 +316,16 @@ export const EditTopicModal: React.FC<EditTopicModalProps> = ({
             </div>
           </div>
 
-          {/* Mode Tabs: Parsed MCQ vs Raw HTML Code */}
+          {/* Mode Tabs: Parsed MCQ vs Book Notes vs Raw HTML Code */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[11px] uppercase font-bold text-slate-400 flex items-center gap-1.5">
-                {contentType === 'parsed_mcq' ? (
+                {contentType === 'book_notes' ? (
+                  <>
+                    <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Book / Study Notes Content</span>
+                  </>
+                ) : contentType === 'parsed_mcq' ? (
                   <>
                     <FileText className="w-3.5 h-3.5 text-emerald-400" />
                     <span>MCQ Questions Editor ({questions.length} Questions)</span>
@@ -329,8 +350,24 @@ export const EditTopicModal: React.FC<EditTopicModalProps> = ({
               )}
             </div>
 
-            {/* Questions Editor */}
-            {contentType === 'parsed_mcq' ? (
+            {/* Content Editor */}
+            {contentType === 'book_notes' ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>📖 Book / Chapter Paragraphs (Hindi / English)</span>
+                  <span className="font-mono text-emerald-400">
+                    {rawSource.trim() ? `${rawSource.trim().split(/\s+/).filter(Boolean).length} words` : 'Empty'}
+                  </span>
+                </div>
+                <textarea
+                  rows={12}
+                  value={rawSource}
+                  onChange={(e) => setRawSource(e.target.value)}
+                  placeholder="Yahan book ka content paste ya edit karein (Hindi/English)..."
+                  className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-xs leading-relaxed focus:outline-none focus:border-emerald-500 font-sans"
+                />
+              </div>
+            ) : contentType === 'parsed_mcq' ? (
               <div className="space-y-3">
                 {questions.map((q, qIdx) => (
                   <div

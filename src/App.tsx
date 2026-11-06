@@ -20,6 +20,28 @@ export default function App() {
   const [selectedRole, setSelectedRole] = useState<'tester' | 'uploader' | null>(null);
   const [uploaderTab, setUploaderTab] = useState<'form' | 'manage'>('form');
 
+  // Global Theme: 'dark' | 'light' (persistent across sessions & all views)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem('topictest_theme');
+    return saved === 'light' || saved === 'dark' ? saved : 'dark';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('topictest_theme', theme);
+    const root = document.documentElement;
+    if (theme === 'light') {
+      root.classList.add('light');
+      root.classList.remove('dark');
+    } else {
+      root.classList.add('dark');
+      root.classList.remove('light');
+    }
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   // Currently selected subject in Top Nav
   const [selectedSubject, setSelectedSubject] = useState<SubjectType>('Math');
 
@@ -215,6 +237,8 @@ export default function App() {
             visitedIds={visitedIds}
             onMarkVisited={handleMarkVisited}
             onSwitchToUploader={() => handleModeChange('uploader')}
+            theme={theme}
+            onToggleTheme={handleToggleTheme}
           />
         ) : (
           <UploaderView

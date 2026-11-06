@@ -45,11 +45,14 @@ export function generateHtmlFromMCQ(
     font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     background: var(--bg);
     color: var(--text);
-    padding: 16px;
+    padding: 12px 10px;
     line-height: 1.5;
+    width: 100%;
+    min-height: 100vh;
   }
   .container {
-    max-width: 820px;
+    max-width: 100%;
+    width: 100%;
     margin: 0 auto;
   }
   header {
@@ -455,3 +458,60 @@ renderQuestions();
 </body>
 </html>`;
 }
+
+/**
+ * Generates standalone HTML reader page for book & notes content
+ */
+export function generateHtmlFromBook(
+  title: string,
+  subject: string,
+  topic: string,
+  subtopic: string | undefined,
+  bookContent: string
+): string {
+  const safeTitle = title.replace(/"/g, '&quot;');
+  const safeSubject = subject.replace(/"/g, '&quot;');
+  const safeTopic = topic.replace(/"/g, '&quot;');
+  const safeSubtopic = (subtopic || '').replace(/"/g, '&quot;');
+  const paragraphs = bookContent
+    .split(/\r?\n\r?\n/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .map(p => `<p>${p.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>`)
+    .join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${safeTitle} - Book Reader</title>
+<style>
+  body {
+    background: #090d16;
+    color: #f1f5f9;
+    font-family: system-ui, -apple-system, sans-serif;
+    padding: 2rem 1.25rem;
+    line-height: 1.8;
+  }
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  h1 { color: #10b981; margin-bottom: 0.5rem; }
+  .meta { color: #94a3b8; font-size: 0.875rem; margin-bottom: 2rem; border-bottom: 1px solid #1e293b; padding-bottom: 1rem; }
+  p { margin-bottom: 1.25rem; text-align: justify; text-indent: 1.5rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>${safeTitle}</h1>
+  <div class="meta">${safeSubject} · ${safeTopic} ${safeSubtopic ? '· ' + safeSubtopic : ''}</div>
+  <article>
+    ${paragraphs}
+  </article>
+</div>
+</body>
+</html>`;
+}
+

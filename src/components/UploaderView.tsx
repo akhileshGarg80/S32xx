@@ -3,7 +3,7 @@ import { SubjectType, ALL_SUBJECTS, TopicItem, insertTopic, updateTopicById } fr
 import { SYLLABUS_DATA } from '../lib/syllabusData';
 import { UniversalMCQQuestion, UniversalMCQParseResult, MCQInputSourceType } from '../types/mcq';
 import { parsePlainText, parseUniversalFile } from '../lib/universalParser';
-import { generateHtmlFromMCQ } from '../lib/htmlTestGenerator';
+import { generateHtmlFromMCQ, generateHtmlFromBook } from '../lib/htmlTestGenerator';
 import { EditTopicModal } from './EditTopicModal';
 import {
   Code2,
@@ -24,7 +24,8 @@ import {
   AlertTriangle,
   Layers,
   FileCheck,
-  Pencil
+  Pencil,
+  BookOpen
 } from 'lucide-react';
 
 interface UploaderViewProps {
@@ -46,8 +47,11 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
   activeTab,
   onTabChange,
 }) => {
-  // Input Mode: 'mcq_parser' (default) vs 'raw_code'
-  const [inputMode, setInputMode] = useState<'mcq_parser' | 'raw_code'>('mcq_parser');
+  // Input Mode: 'mcq_parser' (default) vs 'book_notes' vs 'raw_code'
+  const [inputMode, setInputMode] = useState<'mcq_parser' | 'book_notes' | 'raw_code'>('mcq_parser');
+
+  // Book / Notes Content
+  const [bookContent, setBookContent] = useState('');
 
   // Universal MCQ Parser Source: 'copy_paste' | 'file_upload'
   const [mcqSourceType, setMcqSourceType] = useState<'copy_paste' | 'file_upload'>('copy_paste');
@@ -162,19 +166,29 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
 
   // Auto-generate clean link title & slug if untouched
   useEffect(() => {
+    const isEssence = finalSubtopic === '🦋⃝ 𝐄𝐒𝐒𝐄𝐍𝐂𝐄 ✨' || finalSubtopic.includes('𝐄𝐒𝐒𝐄𝐍𝐂𝐄') || finalSubtopic.includes('ESSENCE');
     const nextNum = existingLinksForSubtopic.length + 1;
-    if (!linkTitle || linkTitle.startsWith('Link ')) {
-      setLinkTitle(`Link ${nextNum}: Practice Set`);
+
+    if (isEssence) {
+      // User requirement: "jab hmm deta uplode kare tab uska title default mai ye rahe 🪄 Insights🪷 samjh gaye aap ye sab mai lagu nhi hoga only 🦋⃝ 𝐄𝐒𝐒𝐄𝐍𝐂𝐄 ✨ isme ye 🪄 Insights🪷 ok"
+      if (!linkTitle || linkTitle.startsWith('Link ') || linkTitle === '🪄 Insights🪷' || linkTitle.startsWith('🪄 Insights🪷')) {
+        setLinkTitle(nextNum > 1 ? `🪄 Insights🪷 ${nextNum}` : '🪄 Insights🪷');
+      }
+      setSubdomain(`essence-insights-${nextNum}-${Date.now().toString().slice(-4)}`);
+    } else {
+      if (!linkTitle || linkTitle === '🪄 Insights🪷' || linkTitle.startsWith('🪄 Insights🪷') || linkTitle.startsWith('Link ')) {
+        setLinkTitle(`Link ${nextNum}: Practice Set`);
+      }
+
+      const cleanSub = finalSubtopic
+        .toLowerCase()
+        .split('(')[0]
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 20);
+
+      setSubdomain(`${cleanSub || 'test'}-link-${nextNum}-${Date.now().toString().slice(-4)}`);
     }
-
-    const cleanSub = finalSubtopic
-      .toLowerCase()
-      .split('(')[0]
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 20);
-
-    setSubdomain(`${cleanSub || 'test'}-link-${nextNum}-${Date.now().toString().slice(-4)}`);
   }, [selectedTopicName, customTopicName, selectedSubtopicName, customSubtopicName]);
 
   // Auto-parse copy-pasted text when changed
@@ -266,7 +280,9 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
 
     const topicToSave = (isCustomTopic ? customTopicName : selectedTopicName).trim();
     const subtopicToSave = (isCustomSubtopic ? customSubtopicName : selectedSubtopicName).trim();
-    const titleToSave = (linkTitle || `Link ${existingLinksForSubtopic.length + 1}`).trim();
+    const isEssence = subtopicToSave === '🦋⃝ 𝐄𝐒𝐒𝐄𝐍𝐂𝐄 ✨' || subtopicToSave.includes('𝐄𝐒𝐒𝐄𝐍𝐂𝐄') || subtopicToSave.includes('ESSENCE');
+    const defaultTitle = isEssence ? '🪄 Insights🪷' : `Link ${existingLinksForSubtopic.length + 1}`;
+    const titleToSave = (linkTitle || defaultTitle).trim();
 
     if (!topicToSave) {
       setErrorMessage('Kripya Topic chunein ya dalein');
@@ -285,7 +301,7 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
 
     let finalCode = '';
     let finalQuestions: UniversalMCQQuestion[] | undefined = undefined;
-    let finalContentType: 'raw_html' | 'parsed_mcq' = 'raw_html';
+    let finalContentType: 'raw_html' | 'parsed_mcq' | 'book_notes' = 'raw_html';
     let finalRawSource = '';
 
     if (inputMode === 'mcq_parser') {
@@ -304,6 +320,22 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
         topicToSave,
         subtopicToSave,
         finalQuestions
+      );
+    } else if (inputMode === 'book_notes') {
+      if (!bookContent.trim()) {
+        setErrorMessage('Kripya Book ya Study Notes ka content box me dalein / paste karein.');
+        return;
+      }
+
+      finalContentType = 'book_notes';
+      finalRawSource = bookContent;
+      // Generate readable standalone HTML export for fallback/iframe
+      finalCode = generateHtmlFromBook(
+        titleToSave,
+        subject,
+        topicToSave,
+        subtopicToSave,
+        bookContent
       );
     } else {
       // Raw HTML mode
@@ -392,6 +424,7 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
 
   const handleAddAnotherLinkUnderSameSubtopic = () => {
     setCode('');
+    setBookContent('');
     setMcqRawText('');
     setUploadedFile(null);
     setParseResult(null);
@@ -400,24 +433,38 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
     if (fileInputRef.current) fileInputRef.current.value = '';
 
     const nextNum = existingLinksForSubtopic.length + 2;
-    setLinkTitle(`Link ${nextNum}: Practice Set`);
-    const cleanSub = finalSubtopic
-      .toLowerCase()
-      .split('(')[0]
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 20);
-    setSubdomain(`${cleanSub || 'test'}-link-${nextNum}-${Date.now().toString().slice(-4)}`);
+    const isEssence = finalSubtopic === '🦋⃝ 𝐄𝐒𝐒𝐄𝐍𝐂𝐄 ✨' || finalSubtopic.includes('𝐄𝐒𝐒𝐄𝐍𝐂𝐄') || finalSubtopic.includes('ESSENCE');
+    if (isEssence) {
+      setLinkTitle(`🪄 Insights🪷 ${nextNum}`);
+      setSubdomain(`essence-insights-${nextNum}-${Date.now().toString().slice(-4)}`);
+    } else {
+      setLinkTitle(`Link ${nextNum}: Practice Set`);
+      const cleanSub = finalSubtopic
+        .toLowerCase()
+        .split('(')[0]
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 20);
+      setSubdomain(`${cleanSub || 'test'}-link-${nextNum}-${Date.now().toString().slice(-4)}`);
+    }
   };
 
   const resetForm = () => {
     setCode('');
+    setBookContent('');
     setMcqRawText('');
     setUploadedFile(null);
     setParseResult(null);
     setSuccessLink(null);
     setErrorMessage(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+
+    const isEssence = finalSubtopic === '🦋⃝ 𝐄𝐒𝐒𝐄𝐍𝐂𝐄 ✨' || finalSubtopic.includes('𝐄𝐒𝐒𝐄𝐍𝐂𝐄') || finalSubtopic.includes('ESSENCE');
+    if (isEssence) {
+      setLinkTitle('🪄 Insights🪷');
+    } else {
+      setLinkTitle(`Link ${existingLinksForSubtopic.length + 1}: Practice Set`);
+    }
   };
 
   return (
@@ -451,10 +498,10 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
         </div>
       </div>
 
-      {/* Mode Switcher: Universal MCQ Parser vs Raw HTML Code */}
+      {/* Mode Switcher: Universal MCQ Parser vs Book / Notes Upload vs Raw HTML Code */}
       {activeTab === 'form' && (
-        <div className="mb-3 flex items-center justify-between bg-slate-900/80 border border-slate-800 rounded-lg p-1.5 text-xs">
-          <div className="flex items-center gap-1">
+        <div className="mb-3 flex flex-wrap items-center justify-between bg-slate-900/80 border border-slate-800 rounded-lg p-1.5 text-xs gap-1.5">
+          <div className="flex flex-wrap items-center gap-1">
             <button
               type="button"
               onClick={() => setInputMode('mcq_parser')}
@@ -466,6 +513,18 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
             >
               <FileCheck className="w-3.5 h-3.5" />
               <span>Universal MCQ Parser (Word/TXT/HTML/Text)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputMode('book_notes')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                inputMode === 'book_notes'
+                  ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>📖 Book / Study Notes Upload</span>
             </button>
             <button
               type="button"
@@ -481,7 +540,11 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
             </button>
           </div>
           <span className="text-[11px] text-slate-500 hidden sm:inline font-mono">
-            {inputMode === 'mcq_parser' ? 'Auto detects questions & answer key' : 'Direct iframe code sandbox'}
+            {inputMode === 'mcq_parser'
+              ? 'Auto detects questions & answer key'
+              : inputMode === 'book_notes'
+              ? 'Hindi/English chapter & paragraph reader'
+              : 'Direct iframe code sandbox'}
           </span>
         </div>
       )}
@@ -551,7 +614,11 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
                       <span className="text-emerald-300 font-medium ml-1.5 font-mono">({item.link_title})</span>
                     )}
                     <span className="ml-1.5 px-1.5 py-0.2 rounded text-[10px] bg-slate-800 text-slate-400 border border-slate-700 font-mono">
-                      {item.content_type === 'parsed_mcq' ? 'Universal MCQ' : 'HTML Code'}
+                      {item.content_type === 'book_notes'
+                        ? '📖 Book / Notes'
+                        : item.content_type === 'parsed_mcq'
+                        ? 'Universal MCQ'
+                        : 'HTML Code'}
                     </span>
                     <span className="text-slate-500 font-mono ml-2">/{item.subdomain}</span>
                   </div>
@@ -560,7 +627,7 @@ export const UploaderView: React.FC<UploaderViewProps> = ({
                       onClick={() => onOpenTesterWithTopic(item.subject, item.subdomain)}
                       className="px-2 py-0.5 bg-slate-800 text-slate-200 rounded hover:bg-slate-700 border border-slate-700"
                     >
-                      Test
+                      {item.content_type === 'book_notes' ? 'Padhein 📖' : 'Test'}
                     </button>
                     <button
                       onClick={() => {
@@ -710,6 +777,39 @@ Answer Key:
                 </div>
               )}
             </div>
+          ) : inputMode === 'book_notes' ? (
+            /* BOOK / STUDY NOTES TEXTAREA */
+            <div className="flex flex-col bg-slate-900 border border-slate-800 rounded-lg overflow-hidden h-72 shadow-sm">
+              <div className="flex items-center justify-between px-3 py-1.5 bg-slate-950 border-b border-slate-800 text-[11px]">
+                <span className="text-slate-300 font-medium flex items-center gap-1.5">
+                  <BookOpen className="w-3 h-3 text-emerald-400" />
+                  <span>Book / Chapter Notes (Hindi / English)</span>
+                </span>
+                <span className="text-emerald-400 font-mono text-[10px]">
+                  {bookContent.trim() ? `${bookContent.trim().split(/\s+/).filter(Boolean).length} words` : 'Empty'}
+                </span>
+              </div>
+              <div className="flex-1 bg-slate-950 overflow-hidden flex flex-col">
+                <textarea
+                  value={bookContent}
+                  onChange={(e) => setBookContent(e.target.value)}
+                  placeholder={`Yahan book ka chapter ya notes paste ya type karein (Hindi ya English).
+Paragraphs, headings, bullet points - jo jaise hai sab waise hi tester me book reader jaisa dikhega.
+
+Example:
+# अध्याय 1: विषय का परिचय
+यह पहला पैराग्राफ है। इसमें जो भी जानकारी आप लिखेंगे, वह बिल्कुल एक साफ सुथरी किताब के पन्नों जैसी दिखेगी।`}
+                  spellCheck={false}
+                  className="w-full h-full p-2.5 bg-transparent text-slate-200 text-xs leading-relaxed resize-none focus:outline-none overflow-y-auto placeholder:text-slate-600"
+                />
+              </div>
+              <div className="px-3 py-1.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
+                <span>📖 Paragraphs tester me real book reader jaise khulenge</span>
+                <span className="font-mono text-emerald-400">
+                  ~{Math.max(1, Math.ceil((bookContent.trim().split(/\s+/).filter(Boolean).length) / 180))} min read
+                </span>
+              </div>
+            </div>
           ) : (
             /* RAW CODE TEXTAREA */
             <div className="flex flex-col bg-slate-900 border border-slate-800 rounded-lg overflow-hidden h-72 shadow-sm">
@@ -842,11 +942,14 @@ Answer Key:
                     onChange={(e) => setSelectedSubtopicName(e.target.value)}
                     className="w-full px-2 py-1 bg-slate-950 border border-slate-700 rounded text-xs text-slate-100 focus:outline-none truncate"
                   >
-                    {availableSubtopics.map((s, idx) => (
-                      <option key={s.slug + idx} value={s.name} className="bg-slate-900">
-                        {s.name}
-                      </option>
-                    ))}
+                    {availableSubtopics.map((s, idx) => {
+                      const isEssence = s.name === '🦋⃝ 𝐄𝐒𝐒𝐄𝐍𝐂𝐄 ✨' || s.name.includes('𝐄𝐒𝐒𝐄𝐍𝐂𝐄') || s.name.includes('ESSENCE');
+                      return (
+                        <option key={s.slug + idx} value={s.name} className={isEssence ? 'bg-amber-950/80 text-amber-300 font-bold' : 'bg-slate-900'}>
+                          {s.name}
+                        </option>
+                      );
+                    })}
                   </select>
                 )}
               </div>
@@ -860,7 +963,11 @@ Answer Key:
                   type="text"
                   value={linkTitle}
                   onChange={(e) => setLinkTitle(e.target.value)}
-                  placeholder="e.g. Set 1: Basic Formulas"
+                  placeholder={
+                    finalSubtopic === '🦋⃝ 𝐄𝐒𝐒𝐄𝐍𝐂𝐄 ✨' || finalSubtopic.includes('𝐄𝐒𝐒𝐄𝐍𝐂𝐄') || finalSubtopic.includes('ESSENCE')
+                      ? '🪄 Insights🪷'
+                      : 'e.g. Set 1: Basic Formulas'
+                  }
                   className="w-full px-2 py-1 bg-slate-950 border border-slate-700 rounded text-xs text-slate-100 placeholder-slate-600 focus:outline-none"
                 />
               </div>
